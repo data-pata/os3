@@ -21,7 +21,7 @@ void *test(void *arg)
         else
         {
             printf("tread %d waiting now \n", id);
-            green_cond_wait(&cond);
+            green_cond_wait(&cond, NULL);
         }
     }
 }

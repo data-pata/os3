@@ -8,8 +8,8 @@ green_mutex_t mutex;
 void *test(void *arg)
 {
     int id = *(int *)arg;
-    int loop = 10;
-    printf("now running: %d\n", id );
+    int loop = 50000;
+    // printf("now running: %d\n", id );
     while (loop > 0)
     {
         green_mutex_lock(&mutex);
@@ -17,9 +17,10 @@ void *test(void *arg)
         {
             // green_mutex_unlock(&mutex);
             green_cond_wait(&cond, &mutex);
+            // green_cond_wait(&cond, NULL);
         }
         flag = (id + 1) % 2;
-        printf("%d thread %d set flag to %d\n",loop, id, flag);
+        // printf("round: %d thread: %d set flag to: %d\n",loop, id, flag);
         green_cond_signal(&cond);
         green_mutex_unlock(&mutex);
         loop--;

@@ -15,7 +15,7 @@ void timer_handler(int);
 
 #define PERIOD 100
 
-#define FALSE 0
+#define FALSE 0  
 #define TRUE 1
 
 #define STACK_SIZE 4096
@@ -34,19 +34,21 @@ void init()
 {
     sigemptyset(&block);
     sigaddset(&block, SIGALRM);
+    // sigaddset(&block, SIGVTALRM);
 
     struct sigaction act = {0};
     struct timeval interval;
     struct itimerval period;
 
     act.sa_handler = timer_handler;
+    // assert(sigaction(SIGVTALRM, &act, NULL) == 0);
     assert(sigaction(SIGALRM, &act, NULL) == 0);
-
     interval.tv_sec = 0;
     interval.tv_usec = PERIOD;
     period.it_interval = interval;
     period.it_value = interval;
     setitimer(ITIMER_REAL, &period, NULL);
+    // setitimer(ITIMER_VIRTUAL, &period, NULL);
 
     /*The  function getcontext() initializes the structure pointed at by ucp to
        the currently active context.*/
@@ -67,6 +69,7 @@ void timer_handler(int sig)
 
 int green_create(green_t *new, void *(*fun) (void *), void *arg)
 {
+    sigprocmask(SIG_BLOCK, &block, NULL);
     // create a new context
     ucontext_t *cntx = (ucontext_t *) malloc(sizeof(ucontext_t));
     getcontext(cntx);
@@ -86,22 +89,23 @@ int green_create(green_t *new, void *(*fun) (void *), void *arg)
     new->retval = NULL;
     new->zombie = FALSE;
 
-    enqueue(&ready_queue, new); 
-
-  return 0;
+    enqueue(&ready_queue, new);
+    sigprocmask(SIG_UNBLOCK, &block, NULL);
+    return 0;
 }
 
 /*start the execution of the real function and, after returning from the
 call, terminate the thread.*/
 void green_thread()
 {
+    sigprocmask(SIG_BLOCK, &block, NULL);
     green_t *this = running;
+    sigprocmask(SIG_UNBLOCK, &block, NULL);
     // call function of "this", func, with pointer to args as parameter arg
     void *result = (*this->fun)(this->arg);
 
     sigprocmask(SIG_BLOCK, &block, NULL);
-    
-    // place waiting (joining) thread in ready queue
+    // this place waiting (joining) thread in ready queue
     if (this->join != NULL)
         enqueue(&ready_queue, this->join);
 
@@ -109,7 +113,7 @@ void green_thread()
     // problem that result is a local pointer??
     this->retval = result;
 
-    //free allocated memory (stack and whole context) of this 
+    //free allocated memory (stack and whole context) of this thread
     free(this->context->uc_stack.ss_sp);
     free((void *)this->context);
 
@@ -120,9 +124,9 @@ void green_thread()
     green_t *next = dequeue(&ready_queue);  
 
     running = next; // will set running to null if no waiting queue!!?
-    setcontext(next->context);
-
-    sigprocmask(SIG_BLOCK, &block, NULL);
+    setcontext(next->context); // switches context to next and terminates (destroys?) this context
+    
+    sigprocmask(SIG_UNBLOCK, &block, NULL);
 }
 
 int green_yield()
@@ -135,16 +139,16 @@ int green_yield()
     green_t *next = dequeue(&ready_queue);
 
     running = next;
-   swapcontext(susp->context, next->context);
-   sigprocmask(SIG_UNBLOCK, &block, NULL);  // really here? wont this stop interrupts for all following threads until this one is running again??
-   return 0;
+    swapcontext(susp->context, next->context);
+    sigprocmask(SIG_UNBLOCK, &block, NULL);  // really here? wont this stop interrupts for all following threads until this one is running again??
+    return 0;
 }
 // OBsERVERA RES GÖRS INGET MED ?
 int green_join(green_t *thread, void **res)
 {
-    sigprocmask(SIG_BLOCK, &block, NULL);
     if(!thread->zombie) 
     {
+        sigprocmask(SIG_BLOCK, &block, NULL);
         green_t *susp = running;
         //add susp to thread's join queue
         enqueue(&thread->join, susp);
@@ -152,8 +156,20 @@ int green_join(green_t *thread, void **res)
         green_t *next = dequeue(&ready_queue);
         running = next; // already done in in d
         swapcontext(susp->context, next->context);
+      
+        sigprocmask(SIG_UNBLOCK, &block, NULL); 
     }
-    sigprocmask(SIG_UNBLOCK, &block, NULL);
+    // retain return value from zombie thread
+    void *result = thread->retval;
+    free(thread);
+    // if(running->context != NULL)
+    // {
+    //     free(running->context->uc_stack.ss_sp);
+    //     free((void *)running->context);
+    // }
+    //free allocated memory (stack and whole context) of this thread
+    // green_t *this = running;
+
     /* collect result and free context  
     is done in green_thread which is called through swapcontext ?? */
     return 0;
@@ -174,6 +190,7 @@ void enqueue(green_t **queue_head, green_t *thread)
     // pointer is passed by value so copying to head is verbose but easier to understand
     // green_t *head = queue_head;
     // empty queue add first
+    if(thread == NULL) return;
     if(*queue_head == NULL) 
     {
         *queue_head = thread;  
@@ -209,15 +226,20 @@ void green_cond_wait(green_cond_t *cond, green_mutex_t *mutex)
     green_t *susp = running;                // suspend the running thread on condition
     enqueue(&cond->susp_queue, susp);   
 
-    // if(mutex != NULL) {
-    //     // release the lock if we have a mutex
-    //     if(mutex->taken)    // what if we dont have the lock, then it's already false and we put susp in ready
-    //         mutex->taken = FALSE;
-    //     // move suspended thread to ready queue
-    //     enqueue(&ready_queue, mutex->susp_queue);    // obs adds only one thread to ready_queue
-    // }
-    if(mutex != NULL)
-        green_mutex_unlock(mutex);
+    if(mutex != NULL) 
+    {
+        // release the lock if we have a mutex
+        if(mutex->susp_queue != NULL)
+        {
+            green_t *to_ready = dequeue(&mutex->susp_queue);
+            enqueue(&ready_queue, to_ready);    // obs adds only one thread to ready_queue?
+        }   // what if we dont have the lock, then it's already false and we put susp in ready
+        else
+            mutex->taken = FALSE;
+        // move suspended thread (on mutex) to ready queue
+    }
+    // if(mutex != NULL)
+    //     green_mutex_unlock(mutex);
     
     // run next thread and start waiting
     green_t *next = dequeue(&ready_queue);
@@ -228,7 +250,7 @@ void green_cond_wait(green_cond_t *cond, green_mutex_t *mutex)
     if (mutex != NULL)
     {
         // trying to take the lock, always returns with lock taken 
-        green_mutex_lock(mutex);
+        // green_mutex_lock(mutex);
         // while (mutex->taken)
         // {
         //     // bad luck, suspend on the lock
@@ -246,7 +268,7 @@ void green_cond_wait(green_cond_t *cond, green_mutex_t *mutex)
 
 void green_cond_signal(green_cond_t *cond) 
 {
-    if (!cond->susp_queue == NULL)
+    if (cond->susp_queue != NULL)
     {
         sigprocmask(SIG_BLOCK, &block, NULL);
         green_t *to_signal = dequeue(&cond->susp_queue);
