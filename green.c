@@ -59,12 +59,12 @@ void init()
 void timer_handler(int sig)
 {   
     // printf("interrupt\n");
-    green_yield();
-    // green_t *susp = running;
-    // enqueue(&ready_queue, susp);
-    // green_t *next = dequeue(&ready_queue);
-    // running = next;
-    // swapcontext(susp->context, next->context);
+    // green_yield();
+    green_t *susp = running;
+    enqueue(&ready_queue, susp);
+    green_t *next = dequeue(&ready_queue);
+    running = next;
+    swapcontext(susp->context, next->context);
 }
 
 int green_create(green_t *new, void *(*fun) (void *), void *arg)
@@ -161,7 +161,7 @@ int green_join(green_t *thread, void **res)
     }
     // retain return value from zombie thread
     void *result = thread->retval;
-    free(thread);
+    // free(thread);
     // if(running->context != NULL)
     // {
     //     free(running->context->uc_stack.ss_sp);
@@ -251,16 +251,16 @@ void green_cond_wait(green_cond_t *cond, green_mutex_t *mutex)
     {
         // trying to take the lock, always returns with lock taken 
         // green_mutex_lock(mutex);
-        // while (mutex->taken)
-        // {
-        //     // bad luck, suspend on the lock
-        //     enqueue(&mutex->susp_queue, susp);
-        //     green_t *next = dequeue(&ready_queue);
-        //     running = next;
-        //     swapcontext(susp->context, next->context);
-        // }
-        // // take the lock
-        // mutex->taken = TRUE;
+        if (mutex->taken)
+        {
+            // bad luck, suspend on the lock
+            enqueue(&mutex->susp_queue, susp);
+            green_t *next = dequeue(&ready_queue);
+            running = next;
+            swapcontext(susp->context, next->context);
+        }
+        else  // take the lock
+        mutex->taken = TRUE;
     }
     sigprocmask(SIG_UNBLOCK, &block, NULL);
     // return 0;

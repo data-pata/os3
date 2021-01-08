@@ -1,26 +1,24 @@
 #include <stdio.h>
 #include "green.h"
 
-int flag = 0;
 green_cond_t cond;
 
-void *test(void *arg)
-{
+volatile int flag = 0;
+volatile int shared = 0;
+void *test(void *arg) {
     int id = *(int *)arg;
-    int loop = 4;
+    int loop = 1000000;
     //printf("now running: %d\n", id );
-    while (loop > 0)
-    {
-        if (flag == id)
-        {
-            printf("thread %d: %d\n", id, loop);
+    while (loop > 0) {
+        if (flag == id) {
+            // printf("thread %d: %d\n", id, loop);
             loop--;
-            flag = (id + 1) % 2;
+            flag = (id + 1) % 2; 
+            shared++;
             green_cond_signal(&cond);
-        }
-        else
+        } else
         {
-            printf("tread %d waiting now \n", id);
+            // printf("tread %d waiting now \n", id);
             green_cond_wait(&cond, NULL);
         }
     }
@@ -40,6 +38,6 @@ int main()
     green_join(&g0, NULL);
     green_join(&g1, NULL);
 
-    printf("all done\n");
+    printf("all done %d \n", shared);
     return 0;
 }

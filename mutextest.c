@@ -6,10 +6,9 @@ long count = 0;
 green_mutex_t lock;
 int shared_resource = 0;
 
-void *test(void *arg)
-{
+void *test(void *arg) {
     int thread_id = *(int *)arg;
-    int loop = 100000;
+    int loop = 1000000;
     while (loop > 0)
     {
         // printf("thread %d: %d\n",i, loop );

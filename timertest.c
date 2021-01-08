@@ -2,7 +2,7 @@
 #include "green.h"
 #include <unistd.h>
 
-long count = 0;
+volatile long count = 0;
 
 void *test(void *arg)
 {

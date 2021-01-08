@@ -1,18 +1,19 @@
 #include <stdio.h>
 #include "green.h"
 
-int flag = 0;
 green_cond_t cond;
 green_mutex_t mutex;
 
+volatile int flag = 0;
+volatile int shared = 0;
 void *test(void *arg)
 {
-    int id = *(int *)arg;
-    int loop = 50000;
+    int id = *(int *)arg; 
+    int loop = 1000000;
     // printf("now running: %d\n", id );
     while (loop > 0)
     {
-        green_mutex_lock(&mutex);
+        // green_mutex_lock(&mutex);
         while (flag != id)
         {
             // green_mutex_unlock(&mutex);
@@ -20,9 +21,10 @@ void *test(void *arg)
             // green_cond_wait(&cond, NULL);
         }
         flag = (id + 1) % 2;
+        shared++;
         // printf("round: %d thread: %d set flag to: %d\n",loop, id, flag);
         green_cond_signal(&cond);
-        green_mutex_unlock(&mutex);
+        // green_mutex_unlock(&mutex);
         loop--;
     }
 }
@@ -44,5 +46,6 @@ int main()
     green_join(&g1, NULL);
 
     printf("done, flag is now: %d\n", flag);
+    printf("shared is: %d\n", shared);
     return 0;
 }

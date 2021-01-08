@@ -6,7 +6,7 @@ void *test(void *arg)
     int i = *(int *)arg;
     int loop = 4;
     while (loop > 0)
-    {
+    {  
         printf("thread %d: %d\n", i, loop);
         loop--;
         green_yield();
